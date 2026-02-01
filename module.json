@@ -1,0 +1,20 @@
+{
+  "id": "chess-timer",
+  "title": "Chess Timer",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "url": "https://github.com/Iwalker-dev/FoundryVTT-Chess-Timer",
+  "flags": {
+    "canUpload": true
+  },
+  "description": "Chess timer for my games. One for player turns, and another for overall game time.",
+  "esmodules": [
+    "main.js"
+  ],
+  "styles": [
+    "styles/chess-clock.css"
+  ]
+}
