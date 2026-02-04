@@ -1,57 +1,49 @@
-// scripts/timer-ui.js
-
-export class TimerUI {
+export class TimerUI extends Application {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: 'chess-clock-timer',
+      title: 'Chess Clock',
+      template: null,
+      width: 320,
+      height: 'auto',
+      resizable: false,
+      minimizable: true,
+      classes: ['chess-clock-window'],
+      popOut: true
+    });
+  }
+  
   constructor() {
-    this.element = null;
-    this.render();
+    super();
     
-    // Listen for timer updates
-    Hooks.on('chessClockTimerUpdate', () => this.render());
-    
-    // Re-render when sidebar changes
-    Hooks.on('renderSidebar', () => this.render());
+    // Listen for timer updates - just re-render data
+    Hooks.on('chessClockTimerUpdate', () => {
+      if (this.rendered) {
+        this.render(false); // false = don't force, just update
+      }
+    });
   }
   
-  render() {
+  async _renderInner() {
     const manager = game.chessClockTimer;
-    if (!manager) return;
+    if (!manager) return $('<div>Loading...</div>');
     
-    // Remove existing if present
-    if (this.element) {
-      this.element.remove();
-    }
-    
-    // Create the timer display
-    const html = this.createHTML(manager);
-    
-    // Inject into sidebar
-    const sidebar = document.querySelector('#sidebar');
-    if (sidebar) {
-      sidebar.insertAdjacentHTML('afterbegin', html);
-      this.element = sidebar.querySelector('#chess-clock-timer');
-      this.activateListeners();
-    }
-  }
-  
-  createHTML(manager) {
     const timerA = this.formatTimer(manager.timers.a);
     const timerB = this.formatTimer(manager.timers.b);
-    const combatEnabled = game.settings.get('chess-clock-timer', 'combatIntegration');
+    const combatEnabled = game.settings.get('chess-timer', 'combatIntegration');
     
-    return `
-      <div id="chess-clock-timer" class="chess-clock-container">
-        <h3>Chess Clock</h3>
-        
+    const html = `
+      <div class="chess-clock-content">
         <div class="timer-row ${timerA.active ? 'active' : ''} ${timerA.warning ? 'warning' : ''}">
           <span class="timer-label">${manager.timers.a.label}:</span>
           <span class="timer-display">${timerA.display}</span>
           <div class="timer-controls">
             ${!combatEnabled ? `
-              <button class="start-a" title="Start ${manager.timers.a.label}">
+              <button class="start-a" title="Start ${manager.timers.a.label}" type="button">
                 <i class="fas fa-play"></i>
               </button>
             ` : ''}
-            <button class="reset-a" title="Reset ${manager.timers.a.label}">
+            <button class="reset-a" title="Reset ${manager.timers.a.label}" type="button">
               <i class="fas fa-undo"></i>
             </button>
           </div>
@@ -62,11 +54,11 @@ export class TimerUI {
           <span class="timer-display">${timerB.display}</span>
           <div class="timer-controls">
             ${!combatEnabled ? `
-              <button class="start-b" title="Start ${manager.timers.b.label}">
+              <button class="start-b" title="Start ${manager.timers.b.label}" type="button">
                 <i class="fas fa-play"></i>
               </button>
             ` : ''}
-            <button class="reset-b" title="Reset ${manager.timers.b.label}">
+            <button class="reset-b" title="Reset ${manager.timers.b.label}" type="button">
               <i class="fas fa-undo"></i>
             </button>
           </div>
@@ -75,26 +67,37 @@ export class TimerUI {
         ${combatEnabled ? '<div class="combat-mode-indicator">🔗 Combat Auto-Switch Enabled</div>' : ''}
       </div>
     `;
+    
+    return $(html);
   }
   
-  activateListeners() {
-    if (!this.element) return;
+  activateListeners(html) {
+    super.activateListeners(html);
     
-    // Manual start buttons (only when combat integration disabled)
-    this.element.querySelector('.start-a')?.addEventListener('click', () => {
+    console.log('ChessTimer: Activating listeners on Application window');
+    
+    // Attach event listeners
+    html.find('.start-a').click((e) => {
+      e.preventDefault();
+      console.log('ChessTimer: Start A clicked');
       game.chessClockTimer.startTimer('a');
     });
     
-    this.element.querySelector('.start-b')?.addEventListener('click', () => {
+    html.find('.start-b').click((e) => {
+      e.preventDefault();
+      console.log('ChessTimer: Start B clicked');
       game.chessClockTimer.startTimer('b');
     });
     
-    // Reset buttons (always available)
-    this.element.querySelector('.reset-a')?.addEventListener('click', () => {
+    html.find('.reset-a').click((e) => {
+      e.preventDefault();
+      console.log('ChessTimer: Reset A clicked');
       game.chessClockTimer.resetTimer('a');
     });
     
-    this.element.querySelector('.reset-b')?.addEventListener('click', () => {
+    html.find('.reset-b').click((e) => {
+      e.preventDefault();
+      console.log('ChessTimer: Reset B clicked');
       game.chessClockTimer.resetTimer('b');
     });
   }

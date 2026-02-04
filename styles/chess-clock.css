@@ -1,9 +1,13 @@
-#chess-clock-timer, .chess-clock-content {
+#chess-clock-timer.app .window-content {
+  background: transparent;
+  padding: 0;
+}
+
+.chess-clock-content {
   background: rgba(0, 0, 0, 0.8);
   border: 2px solid #444;
   border-radius: 5px;
   padding: 10px;
-  margin-bottom: 10px;
 }
 
 #chess-clock-timer h3 {
