@@ -23,6 +23,27 @@ export class TimerUI extends Application {
       }
     });
   }
+
+  async close(options = {}) {
+    if (!this.rendered) return this;
+    if (this._minimized) {
+      await this.maximize();
+      return this;
+    }
+    await this.minimize();
+    return this;
+  }
+
+  _getHeaderButtons() {
+    const buttons = super._getHeaderButtons();
+    const closeButton = buttons.find((button) => button.class === 'close');
+    if (closeButton) {
+      const isMinimized = this._minimized;
+      closeButton.label = isMinimized ? 'Maximize' : 'Minimize';
+      closeButton.icon = isMinimized ? 'fas fa-window-maximize' : 'fas fa-window-minimize';
+    }
+    return buttons;
+  }
   
   async _renderInner() {
     const manager = game.chessClockTimer;
@@ -30,7 +51,6 @@ export class TimerUI extends Application {
     
     const timerA = this.formatTimer(manager.timers.a);
     const timerB = this.formatTimer(manager.timers.b);
-    const combatEnabled = game.settings.get('chess-timer', 'combatIntegration');
     
     const html = `
       <div class="chess-clock-content">
@@ -38,11 +58,9 @@ export class TimerUI extends Application {
           <span class="timer-label">${manager.timers.a.label}:</span>
           <span class="timer-display">${timerA.display}</span>
           <div class="timer-controls">
-            ${!combatEnabled ? `
-              <button class="start-a" title="Start ${manager.timers.a.label}" type="button">
-                <i class="fas fa-play"></i>
-              </button>
-            ` : ''}
+            <button class="start-a" title="Start ${manager.timers.a.label}" type="button">
+              <i class="fas fa-play"></i>
+            </button>
             <button class="reset-a" title="Reset ${manager.timers.a.label}" type="button">
               <i class="fas fa-undo"></i>
             </button>
@@ -53,18 +71,14 @@ export class TimerUI extends Application {
           <span class="timer-label">${manager.timers.b.label}:</span>
           <span class="timer-display">${timerB.display}</span>
           <div class="timer-controls">
-            ${!combatEnabled ? `
-              <button class="start-b" title="Start ${manager.timers.b.label}" type="button">
-                <i class="fas fa-play"></i>
-              </button>
-            ` : ''}
+            <button class="start-b" title="Start ${manager.timers.b.label}" type="button">
+              <i class="fas fa-play"></i>
+            </button>
             <button class="reset-b" title="Reset ${manager.timers.b.label}" type="button">
               <i class="fas fa-undo"></i>
             </button>
           </div>
         </div>
-        
-        ${combatEnabled ? '<div class="combat-mode-indicator">🔗 Combat Auto-Switch Enabled</div>' : ''}
       </div>
     `;
     

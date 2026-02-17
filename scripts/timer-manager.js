@@ -2,22 +2,33 @@
 
 export class TimerManager {
   constructor() {
+    // Load saved state from server or initialize with defaults
+    const savedState = game.settings.get('chess-timer', 'timerState');
+    
     this.timers = {
       a: {
         label: game.settings.get('chess-timer', 'timerALabel'),
         duration: game.settings.get('chess-timer', 'timerADuration') * 1000,
-        remaining: game.settings.get('chess-timer', 'timerADuration') * 1000,
-        active: false,
+        remaining: savedState.a.remaining ?? game.settings.get('chess-timer', 'timerADuration') * 1000,
+        active: savedState.a.active || false,
+        startTime: savedState.a.startTime || null,
+        baseRemaining: null,
         intervalId: null
       },
       b: {
         label: game.settings.get('chess-timer', 'timerBLabel'),
         duration: game.settings.get('chess-timer', 'timerBDuration') * 1000,
-        remaining: game.settings.get('chess-timer', 'timerBDuration') * 1000,
-        active: false,
+        remaining: savedState.b.remaining ?? game.settings.get('chess-timer', 'timerBDuration') * 1000,
+        active: savedState.b.active || false,
+        startTime: savedState.b.startTime || null,
+        baseRemaining: null,
         intervalId: null
       }
     };
+    
+    // Resume any active timers from server state
+    if (this.timers.a.active) this._resumeTimer('a');
+    if (this.timers.b.active) this._resumeTimer('b');
     
     // Hook to handle game pause
     Hooks.on('pauseGame', (paused) => {
@@ -30,8 +41,125 @@ export class TimerManager {
     });
   }
   
+  // Sync local state from server (called when socket receives update)
+  async syncFromServer() {
+    console.log('ChessTimer: Syncing state from server');
+    const savedState = await game.settings.get('chess-timer', 'timerState');
+    
+    // Stop local intervals
+    this.timers.a.intervalId && clearInterval(this.timers.a.intervalId);
+    this.timers.b.intervalId && clearInterval(this.timers.b.intervalId);
+    
+    // Update local state
+    ['a', 'b'].forEach(type => {
+      this.timers[type].remaining = savedState[type].remaining ?? this.timers[type].duration;
+      this.timers[type].active = savedState[type].active || false;
+      this.timers[type].startTime = savedState[type].startTime || null;
+      this.timers[type].intervalId = null;
+      
+      // Resume timer if it was active
+      if (this.timers[type].active) {
+        this._resumeTimer(type);
+      }
+    });
+    
+    // Trigger UI update
+    Hooks.call('chessClockTimerUpdate', 'sync', null);
+  }
+  
+  // Save current state to server and broadcast to other clients
+  async _saveStateToServer() {
+    const state = {
+      a: {
+        remaining: this.timers.a.remaining,
+        active: this.timers.a.active,
+        startTime: this.timers.a.startTime
+      },
+      b: {
+        remaining: this.timers.b.remaining,
+        active: this.timers.b.active,
+        startTime: this.timers.b.startTime
+      }
+    };
+    
+    await game.settings.set('chess-timer', 'timerState', state);
+    
+    // Broadcast to other clients
+    game.socket.emit('module.chess-timer', {
+      action: 'syncTimerState'
+    });
+  }
+  
+  // Resume a timer from saved state (internal use)
+  _resumeTimer(type) {
+    const timer = this.timers[type];
+    if (!timer.startTime) return;
+    
+    // Calculate actual remaining time based on elapsed time since start
+    const elapsed = Date.now() - timer.startTime;
+    timer.remaining = Math.max(0, timer.remaining - elapsed);
+    
+    if (timer.remaining <= 0) {
+      timer.remaining = 0;
+      timer.active = false;
+      this._saveStateToServer();
+      return;
+    }
+    
+    // Reset start time to now and save current remaining as base
+    timer.baseRemaining = timer.remaining;
+    timer.startTime = Date.now();
+    this._startTimerInterval(type);
+  }
+  
+  // Start the interval for a timer (internal use)
+  _startTimerInterval(type) {
+    const timer = this.timers[type];
+    let wasPaused = false;
+    
+    timer.intervalId = setInterval(() => {
+      // Check if game is paused and pause setting is active
+      const pauseOnGamePause = game.settings.get('chess-timer', 'pauseOnGamePause');
+      if (pauseOnGamePause && game.paused) {
+        if (!wasPaused) {
+          // Just got paused - update baseRemaining to current value
+          if (timer.startTime && timer.baseRemaining !== null) {
+            const elapsed = Date.now() - timer.startTime;
+            timer.baseRemaining = Math.max(0, timer.baseRemaining - elapsed);
+            timer.startTime = Date.now();
+          }
+          wasPaused = true;
+        }
+        // Don't update timer while game is paused
+        return;
+      }
+      
+      // Check if we just resumed from pause
+      if (wasPaused) {
+        // Reset start time to now so we don't count the paused time
+        timer.startTime = Date.now();
+        wasPaused = false;
+      }
+      
+      // Calculate remaining based on start time for accuracy
+      if (timer.startTime && timer.baseRemaining !== null) {
+        const elapsed = Date.now() - timer.startTime;
+        timer.remaining = Math.max(0, timer.baseRemaining - elapsed);
+      } else {
+        timer.remaining -= 100;
+      }
+      
+      if (timer.remaining <= 0) {
+        timer.remaining = 0;
+        this.handleExpiry(type);
+      }
+      
+      Hooks.call('chessClockTimerUpdate', type, timer);
+    }, 100);
+  }
+  
   // Manual controls - always available
-  startTimer(type) {
+  async startTimer(type) {
     console.log(`ChessTimer: Starting timer ${type}`);
     const timer = this.timers[type];
     const otherType = type === 'a' ? 'b' : 'a';
@@ -49,49 +177,62 @@ export class TimerManager {
     }
     
     // Chess clock behavior - pause the other timer
-    this.pauseTimer(otherType);
+    await this.pauseTimer(otherType);
     
     timer.active = true;
-    timer.intervalId = setInterval(() => {
-      timer.remaining -= 100;
-      
-      if (timer.remaining <= 0) {
-        timer.remaining = 0;
-        this.handleExpiry(type);
-      }
-      
-      Hooks.call('chessClockTimerUpdate', type, timer);
-    }, 100);
+    timer.startTime = Date.now();
+    timer.baseRemaining = timer.remaining;
+    this._startTimerInterval(type);
+    
+    // Save state to server and broadcast
+    await this._saveStateToServer();
     
     // Trigger immediate update
     Hooks.call('chessClockTimerUpdate', type, timer);
   }
   
-  pauseTimer(type) {
+  async pauseTimer(type) {
     const timer = this.timers[type];
     if (!timer.active) return;
     
     console.log(`ChessTimer: Pausing timer ${type}`);
+    
+    // Calculate final remaining time if there was a start time
+    if (timer.startTime && timer.baseRemaining !== null) {
+      const elapsed = Date.now() - timer.startTime;
+      timer.remaining = Math.max(0, timer.baseRemaining - elapsed);
+      timer.startTime = null;
+      timer.baseRemaining = null;
+    }
+    
     timer.active = false;
     clearInterval(timer.intervalId);
     timer.intervalId = null;
+    
+    // Save state to server and broadcast
+    await this._saveStateToServer();
     
     // Trigger update
     Hooks.call('chessClockTimerUpdate', type, timer);
   }
   
-  resetTimer(type) {
+  async resetTimer(type) {
     console.log(`ChessTimer: Resetting timer ${type}`);
     const timer = this.timers[type];
-    this.pauseTimer(type);
+    await this.pauseTimer(type);
     timer.remaining = timer.duration;
+    timer.startTime = null;
+    
+    // Save state to server and broadcast
+    await this._saveStateToServer();
+    
     Hooks.call('chessClockTimerUpdate', type, timer);
   }
   
-  stopAll() {
+  async stopAll() {
     console.log('ChessTimer: Stopping all timers');
-    this.pauseTimer('a');
-    this.pauseTimer('b');
+    await this.pauseTimer('a');
+    await this.pauseTimer('b');
   }
   
   handleExpiry(type) {

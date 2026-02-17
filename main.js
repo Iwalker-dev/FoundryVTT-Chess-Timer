@@ -109,10 +109,29 @@ Hooks.once('init', () => {
     type: Boolean,
     default: false
   });
+
+  // Timer state storage (synced across all clients)
+  game.settings.register('chess-timer', 'timerState', {
+    scope: 'world',
+    config: false,
+    type: Object,
+    default: {
+      a: { remaining: null, active: false, startTime: null },
+      b: { remaining: null, active: false, startTime: null }
+    }
+  });
 });
 
 Hooks.once('ready', () => {
   console.log('Chess Timer | Ready');
+  
+  // Register socket for timer synchronization
+  game.socket.on('module.chess-timer', (data) => {
+    console.log('ChessTimer: Received socket data', data);
+    if (data.action === 'syncTimerState' && game.chessClockTimer) {
+      game.chessClockTimer.syncFromServer();
+    }
+  });
   
   // Initialize timer manager
   game.chessClockTimer = new TimerManager();
